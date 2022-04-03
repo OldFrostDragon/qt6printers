@@ -199,7 +199,7 @@ class HiddenMemberProvider(object):
         # they are there, so we can use them in summary provider, to avoid another
         # fetch from the inferior, and don't shadow original children
         elif idx < self._num_children + len(self._hiddens):
-            child = self._hiddens[idx - self._num_children]
+            child = self._hiddens[int(idx) - int(self._num_children)]
         else:
             return None
 

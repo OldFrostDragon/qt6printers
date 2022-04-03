@@ -11,7 +11,7 @@ from __future__ import print_function
 import time
 import datetime as dt
 import string
-from urlparse import urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import locale
 import lldb
@@ -91,18 +91,23 @@ def printableQString(valobj):
     length = 0
     if valobj.IsValid():
         d = valobj.GetChildMemberWithName('d')
+
         data = d.GetChildMemberWithName('data')
         offset = d.GetChildMemberWithName('offset')
         size = d.GetChildMemberWithName('size')
+        ptr = d.GetChildMemberWithName('ptr')
 
         isQt4 = data.IsValid()
+        isQt6 = ptr.IsValid()
         size_val = size.GetValueAsSigned(-1)
         alloc = d.GetChildMemberWithName('alloc').GetValueAsUnsigned(0)
         if isQt4:
             alloc += 1
 
         # some sanity check to see if we are dealing with garbage
-        if size_val < 0 or size_val >= alloc:
+        if size_val < 0:
+            return None, 0, 0
+        if not isQt6 and size_val >= alloc:
             return None, 0, 0
 
         tooLarge = u''
@@ -112,6 +117,8 @@ def printableQString(valobj):
 
         if isQt4:
             pointer = data.GetValueAsUnsigned(0)
+        elif isQt6:
+            pointer = ptr.GetValueAsUnsigned(0)
         elif offset.IsValid():
                 pointer = d.GetValueAsUnsigned(0) + offset.GetValueAsUnsigned(0)
         else:
@@ -168,16 +175,15 @@ class QStringFormatter(HiddenMemberProvider):
 
     def __init__(self, valobj, internal_dict):
         super(QStringFormatter, self).__init__(valobj, internal_dict)
-        self._qchar_type = valobj.GetTarget().FindFirstType('QChar')
+        self._qchar_type = valobj.GetTarget().FindFirstType('char16_t')
         self._qchar_size = self._qchar_type.GetByteSize()
 
     def _update(self):
         printable, dataPointer, byteLength = printableQString(self.valobj)
         strLength = byteLength / 2
         self._num_children = strLength
-
         if printable is not None:
-            for idx in range(0, strLength):
+            for idx in range(0, int(strLength)):
                 var = self.valobj.CreateValueFromAddress('[{}]'.format(idx),
                                                          dataPointer + idx * self._qchar_size,
                                                          self._qchar_type)
@@ -202,8 +208,10 @@ def printableQByteArray(valobj):
         data = d.GetChildMemberWithName('data')
         offset = d.GetChildMemberWithName('offset')
         size = d.GetChildMemberWithName('size')
+        ptr = d.GetChildMemberWithName('ptr')
 
         isQt4 = data.IsValid()
+        isQt6 = ptr.IsValid()
         size_val = size.GetValueAsSigned(-1)
         alloc = d.GetChildMemberWithName('alloc').GetValueAsUnsigned(0)
         if isQt4:
@@ -220,6 +228,8 @@ def printableQByteArray(valobj):
 
         if isQt4:
             pointer = data.GetValueAsUnsigned(0)
+        elif isQt6:
+            pointer = ptr.GetValueAsUnsigned(0)
         elif offset.IsValid():
                 pointer = d.GetValueAsUnsigned(0) + offset.GetValueAsUnsigned(0)
         else:
@@ -299,67 +309,36 @@ class BasicListFormatter(HiddenMemberProvider):
 
     def __init__(self, valobj, internal_dict, item_typename):
         super(BasicListFormatter, self).__init__(valobj, internal_dict)
-        if item_typename is None:
-            self._item_type = valobj.GetType().GetTemplateArgumentType(0)
-        else:
-            self._item_type = valobj.GetTarget().FindFirstType(item_typename)
-        pvoid_type = valobj.GetTarget().GetBasicType(lldb.eBasicTypeVoid).GetPointerType()
-        self._pvoid_size = pvoid_type.GetByteSize()
-
-        # from QTypeInfo::isLarge
-        isLarge = self._item_type.GetByteSize() > self._pvoid_size
-
-        # unfortunately we can't use QTypeInfo<T>::isStatic as it's all inlined, so use
-        # this list of types that use Q_DECLARE_TYPEINFO(T, Q_MOVABLE_TYPE)
-        # (obviously it won't work for custom types)
-        movableTypes = ['QRect', 'QRectF', 'QString', 'QMargins', 'QLocale', 'QChar', 'QDate',
-                        'QTime', 'QDateTime', 'QVector', 'QRegExpr', 'QPoint', 'QPointF', 'QByteArray',
-                        'QSize', 'QSizeF', 'QBitArray', 'QLine', 'QLineF', 'QModelIndex',
-                        'QPersitentModelIndex', 'QVariant', 'QFileInfo', 'QUrl', 'QXmlStreamAttribute',
-                        'QXmlStreamNamespaceDeclaration', 'QXmlStreamNotationDeclaration',
-                        'QXmlStreamEntityDeclaration', 'QPair<int, int>']
-        movableTypes = [valobj.GetTarget().FindFirstType(t) for t in movableTypes]
-        # this list of types that use Q_DECLARE_TYPEINFO(T, Q_PRIMITIVE_TYPE) (from qglobal.h)
-        primitiveTypes = ['bool', 'char', 'signed char', 'unsigned char', 'short', 'unsigned short',
-                          'int', 'unsigned int', 'long', 'unsigned long', 'long long',
-                          'unsigned long long', 'float', 'double']
-        primitiveTypes = [valobj.GetTarget().FindFirstType(t) for t in primitiveTypes]
-
-        if self._item_type in movableTypes or self._item_type in primitiveTypes:
-            isStatic = False
-        else:
-            isStatic = not self._item_type.IsPointerType()
-
-        # see QList::Node::t()
-        self._externalStorage = isLarge or isStatic
-        # If is external storage, then the node (a void*) is a pointer to item
-        # else the item is stored inside the node
-        if self._externalStorage:
-            self._node_type = self._item_type.GetPointerType()
-        else:
-            self._node_type = self._item_type
+        self._item_type = valobj.GetType().GetTemplateArgumentType(0)
+        self._item_size = self._item_type.GetByteSize()
 
     def _update(self):
-        d = self.valobj.GetChildMemberWithName('d')
-        begin = d.GetChildMemberWithName('begin').GetValueAsSigned(-1)
-        end = d.GetChildMemberWithName('end').GetValueAsSigned(-1)
-        array = d.GetChildMemberWithName('array')
+        d = self.valobj.GetChildMemberWithName('p')
+        # Qt4 has 'p', Qt5 doesn't
+        isQt4 = d.IsValid()
+        if isQt4:
+            pArray = d.GetChildMemberWithName('array').AddressOf().GetValueAsUnsigned(0)
+        else:
+            d = self.valobj.GetChildMemberWithName('d')
+            ptr = d.GetChildMemberWithName('ptr')
+            pArray = ptr.GetValueAsUnsigned(0)
 
         # sanity check
-        if begin < 0 or end < 0 or end < begin:
+        if not toSBPointer(self.valobj, pArray, self._item_type).IsValid():
             return
 
-        self._num_children = end - begin
+        # self._num_children = d.GetChildMemberWithName('size').GetValueAsUnsigned(0)
+        self._num_children = d.GetChildMemberWithName('size').GetValueAsSigned(-1)
+        if self._num_children < 0:
+            return
+
+        if self._num_children > self._capping_size():
+            self._num_children = self._capping_size()
 
         for idx in range(0, self._num_children):
-            offset = (begin + idx) * self._pvoid_size
-            name = '[{}]'.format(idx)
-            var = array.CreateChildAtOffset(name, offset, self._node_type)
-            if self._externalStorage:
-                # can't use var.Dereference() directly, as the returned SBValue has '*' prepended
-                # to its name. And SBValue name can't be changed once constructed.
-                var = self.valobj.CreateValueFromData(name, var.GetPointeeData(),
-                                                      self._item_type)
+            var = self.valobj.CreateValueFromAddress('[{}]'.format(idx),
+                                                     pArray + idx * self._item_size,
+                                                     self._item_type)
             self._addChild(var)
 
 
@@ -405,8 +384,10 @@ class BasicVectorFormatter(HiddenMemberProvider):
             pArray = d.GetChildMemberWithName('array').AddressOf().GetValueAsUnsigned(0)
         else:
             d = self.valobj.GetChildMemberWithName('d')
-            offset = d.GetChildMemberWithName('offset')
-            pArray = d.GetValueAsUnsigned(0) + offset.GetValueAsUnsigned(0)
+            # offset = d.GetChildMemberWithName('offset')
+            ptr = d.GetChildMemberWithName('ptr')
+            # pArray = d.GetValueAsUnsigned(0) + offset.GetValueAsUnsigned(0)
+            pArray = ptr.GetValueAsUnsigned(0)
 
         # sanity check
         if not toSBPointer(self.valobj, pArray, self._item_type).IsValid():
@@ -524,166 +505,26 @@ def KeyValueSummaryProvider(valobj, internal_dict):
 
 
 class BasicMapFormatter(HiddenMemberProvider):
-    """A lldb synthetic provider for QMap like types"""
+    """A lldb synthetic provider for Qt6 QMap like types"""
 
     def __init__(self, valobj, internal_dict):
         super(BasicMapFormatter, self).__init__(valobj, internal_dict)
-        self_type = valobj.GetType()
-        key_type = self_type.GetTemplateArgumentType(0)
-        val_type = self_type.GetTemplateArgumentType(1)
-        # the ' ' between two template arguments is significant,
-        # otherwise FindFirstType returns None
-        node_typename = 'QMapNode<{}, {}>'.format(key_type.GetName(), val_type.GetName())
-        node_typename = canonicalized_type_name(node_typename)
-        self._node_type = valobj.GetTarget().FindFirstType(node_typename)
+        d = self.valobj.GetChildMemberWithName('d')
+        dd = d.GetChildMemberWithName('d')
+        m = dd.GetChildMemberWithName('m')
 
-        e = self.valobj.GetChildMemberWithName('e')
-        self.isQt4 = e.IsValid()
-        if self.isQt4:
-            self._payload_size = self._qt4_calc_payload(key_type, val_type)
-
-    def _qt4_calc_payload(self, key_type, val_type):
-        """calculate payload size for Qt4"""
-        str = lldb.SBStream()
-        self.valobj.GetExpressionPath(str, True)
-        expr = '{}.payload()'.format(str.GetData())
-        ret = lldb.frame.EvaluateExpression(expr).GetValueAsUnsigned(0)
-        if ret != 0:
-            return ret
-        else:
-            # if the inferior function call didn't work, let's try to calculate ourselves
-            target = self.valobj.GetTarget()
-            pvoid_type = target.GetBasicType(lldb.eBasicTypeVoid).GetPointerType()
-            pvoid_size = pvoid_type.GetByteSize()
-
-            # we can't use QMapPayloadNode as it's inlined
-            # as a workaround take the sum of sizeof(members)
-            ret = key_type.GetByteSize()
-            ret += val_type.GetByteSize()
-            ret += pvoid_size
-
-            # but because of data alignment the value can be higher
-            # so guess it's aliged by sizeof(void*)
-            # TODO: find a real solution for this problem
-            ret += ret % pvoid_size
-
-            # for some reason booleans are different
-            if val_type == target.GetBasicType(lldb.eBasicTypeBool):
-                ret += 2
-
-            ret -= pvoid_size
-            return ret
-
-    class _iteratorQt4(Iterator):
-        """Map iterator for Qt4"""
-
-        def __init__(self, headerobj, node_type, payload_size):
-            self.current = headerobj.GetChildMemberWithName('forward').GetChildAtIndex(0)
-            self.header_addr = headerobj.GetValueAsUnsigned(0)
-            self.node_type = node_type
-            self.payload_size = payload_size
-
-            # sanity check
-            self.is_garbage = False
-            if not validAddr(headerobj, self.header_addr):
-                self.is_garbage = True
-            if not validPointer(self.current):
-                self.is_garbage = True
-
-        def __iter__(self):
-            return self
-
-        def concrete(self, pdata_node):
-            pnode_addr = pdata_node.GetValueAsUnsigned(0)
-            pnode_addr -= self.payload_size
-
-            return toSBPointer(self.current, pnode_addr, self.node_type)
-
-        def __next__(self):
-            if self.is_garbage:
-                raise StopIteration
-            if self.current.GetValueAsUnsigned(0) == self.header_addr:
-                raise StopIteration
-            pnode = self.concrete(self.current)
-            self.current = self.current.GetChildMemberWithName('forward').GetChildAtIndex(0)
-            return pnode
-
-    class _iteratorQt5(Iterator):
-        """Map iterator for Qt5"""
-
-        def __init__(self, dataobj, pnode_type):
-            self.pnode_type = pnode_type
-            self.root = dataobj.GetChildMemberWithName('header')
-            self.current = lldb.SBValue()
-
-            # We store the path here to avoid keeping re-fetching
-            # values from the inferior (also, skip the pointer
-            # arithmetic involved in using the parent pointer
-            self.path = []
-
-        def __iter__(self):
-            return self
-
-        def moveToNextNode(self):
-            def isNullPointer(val):
-                return not val.IsValid() or val.GetValueAsUnsigned(0) == 0
-
-            if isNullPointer(self.current):
-                # find the leftmost node
-                left = self.root.GetChildMemberWithName('left')
-                if isNullPointer(left):
-                    return False
-                self.current = self.root
-                while not isNullPointer(left):
-                    self.path.append(self.current)
-                    self.current = left
-                    left = self.current.GetChildMemberWithName('left')
-            else:
-                right = self.current.GetChildMemberWithName('right')
-                if not isNullPointer(right):
-                    self.path.append(self.current)
-                    self.current = right
-                    left = self.current.GetChildMemberWithName('left')
-                    while not isNullPointer(left):
-                        self.path.append(self.current)
-                        self.current = left
-                        left = self.current.GetChildMemberWithName('left')
-                else:
-                    last = self.current
-                    self.current = self.path.pop()
-                    right = self.current.GetChildMemberWithName('right')
-                    while right.GetValueAsUnsigned(0) == last.GetValueAsUnsigned(0):
-                        last = self.current
-                        self.current = self.path.pop()
-                        right = self.current.GetChildMemberWithName('right')
-                    # if there are no more parents, we are at the root
-                    if len(self.path) == 0:
-                        return False
-            return True
-
-        def __next__(self):
-            if not self.moveToNextNode():
-                raise StopIteration
-            return self.current.Cast(self.pnode_type)
+        int_map_value = self.valobj.CreateValueFromData("std_map", m.GetData(), m.GetType().GetCanonicalType())
+        self._num_children = 1
+        self._addChild(int_map_value)
 
     def _update(self):
-        pnode_type = self._node_type.GetPointerType()
-        if self.isQt4:
-            e = self.valobj.GetChildMemberWithName('e')
-            it = self._iteratorQt4(e, self._node_type, self._payload_size)
-        else:
-            d = self.valobj.GetChildMemberWithName('d')
-            it = self._iteratorQt5(d, pnode_type)
+        d = self.valobj.GetChildMemberWithName('d')
+        dd = d.GetChildMemberWithName('d')
+        m = dd.GetChildMemberWithName('m')
 
-        self._num_children = 0
-        for pnode in it:
-            # dereference node and change to a user friendly name
-            name = '[{}]'.format(self._num_children)
-            self._num_children += 1
-            var = self.valobj.CreateValueFromData(name, pnode.GetPointeeData(),
-                                                  self._node_type)
-            self._addChild(var)
-
+        int_map_value = self.valobj.CreateValueFromData("std_map", m.GetData(), m.GetType().GetCanonicalType())
+        self._num_children = 1
+        self._addChild(int_map_value)
 
 class QMapFormatter(BasicMapFormatter):
     """lldb synthethic provider for QMap"""
@@ -712,11 +553,6 @@ class BasicHashFormatter(HiddenMemberProvider):
         self_type = valobj.GetType()
         self._key_type = self_type.GetTemplateArgumentType(0)
         self._val_type = self_type.GetTemplateArgumentType(1)
-        node_typename = 'QHashNode<{}, {}>'.format(self._key_type.GetName(),
-                                                   self._val_type.GetName())
-        node_typename = canonicalized_type_name(node_typename)
-
-        self._node_type = valobj.GetTarget().FindFirstType(node_typename)
 
     class _iterator(Iterator):
         """Hash iterator"""
@@ -777,25 +613,67 @@ class BasicHashFormatter(HiddenMemberProvider):
             return pnode
 
     def _update(self):
-        self._num_children = self.valobj.GetChildMemberWithName('d').GetChildMemberWithName('size').GetValueAsSigned(-1)
-        if self._num_children < 0:
-            return
+        # self._num_children = self.valobj.GetChildMemberWithName('d').GetChildMemberWithName('size').GetValueAsSigned(-1)
+        # if self._num_children < 0:
+        #     return
 
-        idx = 0
-        for pnode in self._iterator(self.valobj, self._node_type.GetPointerType()):
-            if idx >= self._num_children:
-                self._members = []
-                self._num_children = 0
-                break
-            # dereference node and change to a user friendly name
-            name = '[{}]'.format(idx)
-            idx += 1
-            var = self.valobj.CreateValueFromData(name, pnode.GetPointeeData(),
-                                                  self._node_type)
-            self._addChild(var)
-        if idx != self._num_children:
-            self._members = []
-            self._num_children = 0
+        # idx = 0
+        # for pnode in self._iterator(self.valobj, self._node_type.GetPointerType()):
+        #     if idx >= self._num_children:
+        #         self._members = []
+        #         self._num_children = 0
+        #         break
+        #     # dereference node and change to a user friendly name
+        #     name = '[{}]'.format(idx)
+        #     idx += 1
+        #     var = self.valobj.CreateValueFromData(name, pnode.GetPointeeData(),
+        #                                           self._node_type)
+        #     self._addChild(var)
+        # if idx != self._num_children:
+        #     self._members = []
+        #     self._num_children = 0
+        d = self.valobj.GetChildMemberWithName('d')
+        hash_size = d.GetChildMemberWithName('size').GetValueAsUnsigned(0)
+        buckets = d.GetChildMemberWithName(
+            'numBuckets').GetValueAsUnsigned(0)  # size_t
+        spans = d.GetChildMemberWithName('spans')  # Span *
+
+        node_type = self.valobj.GetTarget().FindFirstType("QHashPrivate::Node<{}, {}>".format(
+            self._key_type.GetCanonicalType().GetName(), self._val_type.GetCanonicalType().GetName()))
+        span_type = spans.Dereference().GetType().GetCanonicalType()
+
+        span_size = 128 + 2 * self._pointer_size
+        nspans = int((buckets + 127) / 128)
+        count = 0
+
+        for b in range(nspans):
+            current_span_addr = spans.GetValueAsUnsigned(
+                0) + b * span_size  # new Span *
+            current_span = spans.CreateValueFromAddress(
+                '(current_span)', current_span_addr, span_type)
+            offsets = current_span.GetChildMemberWithName('offsets')
+            entries = current_span.GetChildMemberWithName('entries')
+            offset_type = self.valobj.GetTarget().FindFirstType('unsigned char')
+
+            for i in range(128):
+                offset_addr = offsets.AddressOf().GetValueAsUnsigned() + \
+                    i * offset_type.GetByteSize()
+                offset_val = offsets.CreateValueFromAddress(
+                    "temp_hash_offset", offset_addr, offset_type).GetValueAsUnsigned()
+                if offset_val == 255:  # not used
+                    continue
+                entry_addr = entries.GetValueAsUnsigned() + offset_val * node_type.GetByteSize()
+                entry_value = entries.CreateValueFromAddress(
+                    "temp_node_entry", entry_addr, node_type)
+                
+                entry_key = entry_value.GetChildMemberWithName('key')
+                name = '[{}]'.format(entry_key)
+                print(name)
+                var = self.valobj.CreateValueFromData(name, entry_value.GetData(),
+                                                    node_type)
+                self._addChild(var)
+                count += 1
+        self._num_children = count
 
 
 class QHashFormatter(BasicHashFormatter):
@@ -1064,7 +942,6 @@ def QDateTimeSummaryProvider(valobj, internal_dict):
             formatted = formatted[2:-1]
             return formatted
     return None
-
 
 class QUrlFormatter(HiddenMemberProvider):
     """docstring for QUrlFormatter"""
