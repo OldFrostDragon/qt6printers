@@ -1,2 +1,36 @@
 # qt6printers
-Pretty printers for Qt6 classes
+
+LLDB pretty printers for Qt6 types based on the original [KDevelop](https://invent.kde.org/kdevelop/kdevelop) printers.
+
+## How to use LLDB printers
+
+Create `~/.lldbinit` file and add the following lines to it
+
+```
+settings set target.load-script-from-symbol-file true
+
+command script import ~/<path-to-cloned-repo>/lldb/qt.py
+```
+
+## Supported types
+
+- [x] QVector
+- [x] QList
+- [x] QStack
+- [x] QQueue
+- [x] QMap
+- [ ] QMultiMap
+- [x] QHash
+- [ ] QMultiHash
+- [x] QSet
+- [x] QString
+- [x] QStringList
+- [ ] QByteArray
+- [ ] QVariant
+- [ ] QDate
+- [ ] QTime
+- [ ] QDateTime
+- [ ] QUrl
+- [ ] QUuid
+- [ ] QVariant
+- [ ] QCache
