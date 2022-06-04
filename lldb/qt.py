@@ -809,10 +809,10 @@ class QTimeFormatter(HiddenMemberProvider):
         SECS_PER_MIN = 60
         MSECS_PER_MIN = 60000
 
-        hour = ds / MSECS_PER_HOUR
-        minute = (ds % MSECS_PER_HOUR) / MSECS_PER_MIN
-        second = (ds / 1000) % SECS_PER_MIN
-        msec = ds % 1000
+        hour = ds // MSECS_PER_HOUR
+        minute = (ds % MSECS_PER_HOUR) // MSECS_PER_MIN
+        second = (ds // 1000) % SECS_PER_MIN
+        msec = int(ds % 1000)
         return dt.time(hour, minute, second, msec)
 
     def _update(self):
@@ -829,15 +829,15 @@ class QTimeFormatter(HiddenMemberProvider):
         if pytime is None:
             return
         # (ISO)
-        iso_str = pytime.isoformat().decode().__repr__()[2:-1]
+        iso_str = pytime.isoformat().__repr__()[1:-1]
         self._addChild(('(ISO)', iso_str))
 
         # (Locale)
-        locale_encoding = [locale.getlocale()[1]]
-        if locale_encoding[0] is None:
-            locale_encoding = []
-        locale_str = pytime.strftime('%X').decode(*locale_encoding).__repr__()[2:-1]
-        self._addChild(('(Locale)', locale_str))
+        # locale_encoding = [locale.getlocale()[1]]
+        # if locale_encoding[0] is None:
+        #     locale_encoding = []
+        # locale_str = pytime.strftime('%X').decode(*locale_encoding).__repr__()[1:-1]
+        # self._addChild(('(Locale)', locale_str))
 
 
 def QTimeSummaryProvider(valobj, internal_dict):
@@ -850,7 +850,7 @@ def QTimeSummaryProvider(valobj, internal_dict):
         # No synthetic provider installed, get the content by ourselves
         pytime = QTimeFormatter.parse(valobj.GetChildMemberWithName('mds').GetValueAsUnsigned(0))
         if pytime is not None:
-            return pytime.isoformat().decode().__repr__()[2:-1]
+            return pytime.isoformat().__repr__()[1:-1]
     return None
 
 

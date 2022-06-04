@@ -258,9 +258,8 @@ class HiddenMemberProvider(object):
             if len(var) != 2:
                 print('error, const char[] value should be a tuple with two elements, it is', var)
             name, content = var
-
-            if isinstance(content, unicode):
-                content = content.encode()
+            # if isinstance(content, unicode):
+            #     content = content.encode()
 
             try:
                 char_arr_type = self._char_type.GetArrayType(len(content));
