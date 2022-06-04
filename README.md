@@ -19,7 +19,7 @@ command script import ~/<path-to-cloned-repo>/lldb/qt.py
 - [x] QStack
 - [x] QQueue
 - [x] QMap
-- [ ] QMultiMap
+- [x] QMultiMap
 - [x] QHash
 - [ ] QMultiHash
 - [x] QSet

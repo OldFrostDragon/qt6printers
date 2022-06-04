@@ -515,7 +515,7 @@ class BasicMapFormatter(HiddenMemberProvider):
         dd = d.GetChildMemberWithName('d')
         if dd.GetValueAsUnsigned(0) == 0:
             return
-            
+
         m = dd.GetChildMemberWithName('m')
 
         int_map_value = self.valobj.CreateValueFromData("std_map", m.GetData(), m.GetType().GetCanonicalType())
@@ -543,15 +543,10 @@ class QMapFormatter(BasicMapFormatter):
 
 
 class QMultiMapFormatter(BasicMapFormatter):
-    """lldb synthethic provider for QMap"""
+    """lldb synthethic provider for QMultiMap"""
 
     def __init__(self, valobj, internal_dict):
-        super(QMultiMapFormatter, self).__init__(valobj.GetChildAtIndex(0), internal_dict)
-        self.actualobj = valobj
-
-    def update(self):
-        self.valobj = self.actualobj.GetChildAtIndex(0)
-        super(QMultiMapFormatter, self).update()
+        super(QMultiMapFormatter, self).__init__(valobj, internal_dict)
 
 
 class BasicHashFormatter(HiddenMemberProvider):
