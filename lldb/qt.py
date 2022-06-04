@@ -11,6 +11,7 @@ from __future__ import print_function
 import time
 import datetime as dt
 import string
+from turtle import rt
 from urllib.parse import urlsplit, urlunsplit
 
 import locale
@@ -509,8 +510,12 @@ class BasicMapFormatter(HiddenMemberProvider):
 
     def __init__(self, valobj, internal_dict):
         super(BasicMapFormatter, self).__init__(valobj, internal_dict)
+        self._num_children = 0
         d = self.valobj.GetChildMemberWithName('d')
         dd = d.GetChildMemberWithName('d')
+        if dd.GetValueAsUnsigned(0) == 0:
+            return
+            
         m = dd.GetChildMemberWithName('m')
 
         int_map_value = self.valobj.CreateValueFromData("std_map", m.GetData(), m.GetType().GetCanonicalType())
@@ -518,8 +523,12 @@ class BasicMapFormatter(HiddenMemberProvider):
         self._addChild(int_map_value)
 
     def _update(self):
+        self._num_children = 0
         d = self.valobj.GetChildMemberWithName('d')
         dd = d.GetChildMemberWithName('d')
+        if dd.GetValueAsUnsigned(0) == 0:
+            return
+
         m = dd.GetChildMemberWithName('m')
 
         int_map_value = self.valobj.CreateValueFromData("std_map", m.GetData(), m.GetType().GetCanonicalType())

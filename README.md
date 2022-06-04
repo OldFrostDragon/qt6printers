@@ -31,6 +31,6 @@ command script import ~/<path-to-cloned-repo>/lldb/qt.py
 - [ ] QTime
 - [ ] QDateTime
 - [ ] QUrl
-- [ ] QUuid
+- [x] QUuid
 - [ ] QVariant
 - [ ] QCache
