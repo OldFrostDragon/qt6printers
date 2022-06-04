@@ -721,37 +721,37 @@ class QDateFormatter(HiddenMemberProvider):
     def has_children(self):
         return True
 
-    @staticmethod
-    def parse(julianDay):
+    def parse_date_from_julian(self, julianDayValue):
         """Copied from Qt srources"""
-        if julianDay == 0:
+        if julianDayValue == 0:
+            print("julianDayValue is 0")
             return None
-        if julianDay >= 2299161:
+        if julianDayValue >= 2299161:
             # Gregorian calendar starting from October 15, 1582
             # This algorithm is from Henry F. Fliegel and Thomas C. Van Flandern
-            ell = julianDay + 68569
-            n = (4 * ell) / 146097
-            ell = ell - (146097 * n + 3) / 4
-            i = (4000 * (ell + 1)) / 1461001
-            ell = ell - (1461 * i) / 4 + 31
-            j = (80 * ell) / 2447
-            d = ell - (2447 * j) / 80
-            ell = j / 11
+            ell = julianDayValue + 68569
+            n = (4 * ell) // 146097
+            ell = ell - (146097 * n + 3) // 4
+            i = (4000 * (ell + 1)) // 1461001
+            ell = ell - (1461 * i) // 4 + 31
+            j = (80 * ell) // 2447
+            d = ell - (2447 * j) // 80
+            ell = j // 11
             m = j + 2 - (12 * ell)
             y = 100 * (n - 49) + i + ell
         else:
             # Julian calendar until October 4, 1582
             # Algorithm from Frequently Asked Questions about Calendars by Claus Toendering
-            julianDay += 32082
-            dd = (4 * julianDay + 3) / 1461
-            ee = julianDay - (1461 * dd) / 4
-            mm = ((5 * ee) + 2) / 153
-            d = ee - (153 * mm + 2) / 5 + 1
-            m = mm + 3 - 12 * (mm / 10)
-            y = dd - 4800 + (mm / 10)
+            julianDayValue += 32082
+            dd = (4 * julianDayValue + 3) // 1461
+            ee = julianDayValue - (1461 * dd) // 4
+            mm = ((5 * ee) + 2) // 153
+            d = ee - (153 * mm + 2) // 5 + 1
+            m = mm + 3 - 12 * mm // 10
+            y = dd - 4800 + mm // 10
             if y <= 0:
                 return None
-        return dt.date(y, m, d)
+        return dt.date(int(y), int(m), int(d))
 
     def _update(self):
         # FIXME: Calling functions returns incorrect SBValue for complex type in lldb
@@ -763,19 +763,21 @@ class QDateFormatter(HiddenMemberProvider):
         julianDay = self.valobj.GetChildMemberWithName('jd')
         self._addChild(julianDay)
 
-        pydate = self.parse(julianDay.GetValueAsUnsigned(0))
+        intJulianDay = julianDay.GetValueAsUnsigned(0)
+        pydate = self.parse_date_from_julian(intJulianDay)
         if pydate is None:
             return
+
         # (ISO)
-        iso_str = pydate.isoformat().decode().__repr__()[2:-1]
+        iso_str = pydate.isoformat().__repr__()[1:-1]
         self._addChild(('(ISO)', iso_str))
 
         # (Locale)
-        locale_encoding = [locale.getlocale()[1]]
-        if locale_encoding[0] is None:
-            locale_encoding = []
-        locale_str = pydate.strftime('%x').decode(*locale_encoding).__repr__()[2:-1]
-        self._addChild(('(Locale)', locale_str))
+        # locale_encoding = [locale.getlocale()[1]]
+        # if locale_encoding[0] is None:
+        #     locale_encoding = []
+        # locale_str = pydate.strftime('%x').decode(*locale_encoding).__repr__()[2:-1]
+        # self._addChild(('(Locale)', locale_str))
 
 
 def QDateSummaryProvider(valobj, internal_dict):
@@ -786,9 +788,9 @@ def QDateSummaryProvider(valobj, internal_dict):
             if summary is not None:
                 return summary
         # No synthetic provider installed, get the content by ourselves
-        pydate = QDateFormatter.parse(valobj.GetChildMemberWithName('jd').GetValueAsUnsigned(0))
+        pydate = QDateFormatter(valobj, internal_dict).parse_date_from_julian(valobj.GetChildMemberWithName('jd').GetValueAsUnsigned(0))
         if pydate is not None:
-            return pydate.isoformat().decode().__repr__()[2:-1]
+            return pydate.isoformat().__repr__()[1:-1]
     return '<Invalid>'
 
 

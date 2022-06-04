@@ -27,7 +27,7 @@ command script import ~/<path-to-cloned-repo>/lldb/qt.py
 - [x] QStringList
 - [x] QByteArray
 - [ ] QVariant
-- [ ] QDate
+- [x] QDate
 - [x] QTime
 - [ ] QDateTime
 - [x] QUrl
