@@ -206,20 +206,14 @@ def QCharSummaryProvider(valobj, internal_dict):
 def printableQByteArray(valobj):
     if valobj.IsValid():
         d = valobj.GetChildMemberWithName('d')
-        data = d.GetChildMemberWithName('data')
-        offset = d.GetChildMemberWithName('offset')
+        data = d.GetChildMemberWithName('d')
         size = d.GetChildMemberWithName('size')
         ptr = d.GetChildMemberWithName('ptr')
 
-        isQt4 = data.IsValid()
-        isQt6 = ptr.IsValid()
         size_val = size.GetValueAsSigned(-1)
-        alloc = d.GetChildMemberWithName('alloc').GetValueAsUnsigned(0)
-        if isQt4:
-            alloc += 1
 
         # sanity check
-        if size_val < 0 or size_val >= alloc:
+        if size_val < 0:
             return None, 0, 0
 
         tooLarge = u''
@@ -227,15 +221,7 @@ def printableQByteArray(valobj):
             tooLarge = u'...'
             size_val = HiddenMemberProvider._capping_size()
 
-        if isQt4:
-            pointer = data.GetValueAsUnsigned(0)
-        elif isQt6:
-            pointer = ptr.GetValueAsUnsigned(0)
-        elif offset.IsValid():
-                pointer = d.GetValueAsUnsigned(0) + offset.GetValueAsUnsigned(0)
-        else:
-            pointer = d.GetValueAsUnsigned(0) + 24  # Fallback to hardcoded value
-
+        pointer = ptr.GetValueAsUnsigned(0)
         length = size_val
         if length == 0:
             return u'', pointer, length
@@ -243,19 +229,21 @@ def printableQByteArray(valobj):
         try:
             error = lldb.SBError()
             string_data = valobj.process.ReadMemory(pointer, length, error)
+
             # The object might be not yet initialized. In this case size is a bogus value,
             # and memory access may fail
             if error.Success():
                 # replace non-ascii byte with a space and get a printable version
                 ls = list(string_data)
+                out_ls = []
                 for idx in range(length):
-                    if ls[idx] in string.printable:
-                        if ls[idx] != "'":
+                    if chr(ls[idx]) in string.printable:
+                        if chr(ls[idx]) != "'":
                             # convert tab, nl, ..., and '\\' to r'\\'
-                            ls[idx] = ls[idx].__repr__()[1:-1]
+                            out_ls.append(ls[idx].__repr__()[1:-1])
                     else:
-                        ls[idx] = r'\x{:02x}'.format(ord(ls[idx]))
-                content = u''.join(ls)
+                        out_ls.append(r'\x{:02x}'.format(ord(ls[idx])))
+                content = u''.join(out_ls)
                 return content + tooLarge, pointer, length
         except:
             pass
@@ -272,11 +260,11 @@ def QByteArraySummaryProvider(valobj, internal_dict):
                 # must undo the quotation done by GetSummary
                 return 'b' + unquote(summary)
         # Something wrong with our synthetic provider, get the content by ourselves
-        printable, _, _ = printableQByteArray(valobj)
-        if printable is not None:
-            # first replace " to \", and suround by "", no need to escape other things which
-            # are handled in printableQByteArray.
-            return 'b"{}"'.format(printable.replace('"', '\\"'))
+        printable = []
+        for idx in range(valobj.GetNumChildren()):
+            printable.append(unquote(valobj.GetChildAtIndex(idx).GetValue(), quote='\''))
+        return u''.join(printable)
+        # return 'b"{}"'.format(printable.replace('"', '\\"'))
     return '<Invalid>'
 
 

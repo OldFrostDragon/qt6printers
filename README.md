@@ -25,12 +25,11 @@ command script import ~/<path-to-cloned-repo>/lldb/qt.py
 - [x] QSet
 - [x] QString
 - [x] QStringList
-- [ ] QByteArray
+- [x] QByteArray
 - [ ] QVariant
 - [ ] QDate
 - [ ] QTime
 - [ ] QDateTime
-- [ ] QUrl
+- [x] QUrl
 - [x] QUuid
-- [ ] QVariant
 - [ ] QCache
