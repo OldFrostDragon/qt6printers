@@ -29,7 +29,7 @@ command script import ~/<path-to-cloned-repo>/lldb/qt.py
 - [ ] QVariant
 - [x] QDate
 - [x] QTime
-- [ ] QDateTime
+- [x] QDateTime
 - [x] QUrl
 - [x] QUuid
 - [ ] QCache

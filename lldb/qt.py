@@ -889,19 +889,19 @@ class QDateTimeFormatter(HiddenMemberProvider):
             locale_encoding = []
 
         # toTime_t
-        self._addChild(rename('toTime_t', time_t))
+        self._addChild(rename('timestamp_seconds', time_t))
 
         # time tuple in local time and utc time
         local_tt = self.parse(time_t.GetValueAsUnsigned(0))
         utc_tt = self.parse(time_t.GetValueAsUnsigned(0), utc=True)
 
         # (ISO)
-        formatted = time.strftime('%Y-%m-%d %H:%M:%S', utc_tt).decode(*locale_encoding).__repr__()
-        formatted = formatted[2:-1]
+        formatted = time.strftime('%Y-%m-%d %H:%M:%S', utc_tt).__repr__()
+        formatted = formatted[1:-1]
         self._addChild(('(ISO)', formatted))
 
         def locale_fmt(name, tt):
-            formatted = time.strftime('%c', tt).decode(*locale_encoding).__repr__()[2:-1]
+            formatted = time.strftime('%c', tt).__repr__()[1:-1]
             self._addChild((name, formatted))
 
         # (Locale)
@@ -932,8 +932,8 @@ def QDateTimeSummaryProvider(valobj, internal_dict):
         # No synthetic provider installed, get the content by ourselves
         pytime = QDateTimeFormatter.parse(QDateTimeFormatter.getdata(valobj).GetValueAsUnsigned(0))
         if pytime is not None:
-            formatted = time.strftime('%Y-%m-%d %H:%M:%S', pytime).decode().__repr__()
-            formatted = formatted[2:-1]
+            formatted = time.strftime('%Y-%m-%d %H:%M:%S', pytime).__repr__()
+            formatted = formatted[1:-1]
             return formatted
     return None
 
