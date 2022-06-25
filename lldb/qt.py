@@ -84,6 +84,9 @@ def __lldb_init_module(debugger, unused):
     debugger.HandleCommand('type synthetic add QUuid -w kdevelop-qt -l qt.QUuidFormatter')
     debugger.HandleCommand('type summary add QUuid -w kdevelop-qt -F qt.QUuidSummaryProvider')
 
+    debugger.HandleCommand('type synthetic add QVariant -w kdevelop-qt -l qt.QVariantFormatter')
+    debugger.HandleCommand('type summary add QVariant -w kdevelop-qt -F qt.QVariantSummaryProvider')
+
     debugger.HandleCommand('type category enable kdevelop-qt')
 
 
@@ -660,7 +663,6 @@ class BasicHashFormatter(HiddenMemberProvider):
                 
                 entry_key = entry_value.GetChildMemberWithName('key')
                 name = '[{}]'.format(entry_key)
-                print(name)
                 var = self.valobj.CreateValueFromData(name, entry_value.GetData(),
                                                     node_type)
                 self._addChild(var)
@@ -1133,3 +1135,110 @@ def QUuidSummaryProvider(valobj, internal_dict):
     data += [val.GetValueAsUnsigned(0) for val in valobj.GetChildMemberWithName('data4')]
 
     return 'QUuid({{{:02x}-{:02x}-{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}}})'.format(*data)
+
+def QVariantSummaryProvider(valobj, internal_dict):
+    if valobj.IsValid():
+        content = valobj.GetChildMemberWithName('(content)')
+        if content.IsValid():
+            summary = content.GetSummary()
+            if summary is not None:
+                return unquote(summary)
+    return '<Invalid>'
+
+class QVariantFormatter(HiddenMemberProvider):
+    def __init__(self, valobj, internal_dict):
+        super(QVariantFormatter, self).__init__(valobj, internal_dict)
+        self._char_type = valobj.GetType().GetBasicType(lldb.eBasicTypeChar)
+        self._char_size = self._char_type.GetByteSize()
+    
+    def tryCastToMetaType(self, metatype): # -> None or SBValue
+        frame = None
+        for f in [self.valobj.frame, lldb.frame, self.valobj.process.selected_thread.GetFrameAtIndex(0)]:
+            if f.IsValid():
+                frame = f
+                break
+        if frame is None:
+            return None
+        
+        invoke_expr = "reinterpret_cast<QtPrivate::QMetaTypeInterface *>({})".format(metatype)
+        res = frame.EvaluateExpression(invoke_expr)
+        return res
+    
+    def tryGetVariantType(self, typeId): # (SBValue(QBasicAtomicInt) ) -> int
+        q_value = typeId.GetChildMemberWithName('_q_value')
+        # TODO: get size of int type here
+        value = q_value.GetData().GetSignedInt32(lldb.SBError(), 0)
+        return value
+    
+    def readCString(self, addrAsUnsigned):
+        try:
+            result = []
+            while True:
+                error = lldb.SBError()
+                char_data = self.valobj.process.ReadMemory(addrAsUnsigned, self._char_size, error).decode('utf-8')
+                if error.Success():
+                    if char_data == '\x00':
+                        break
+                    result.append(char_data)
+                    addrAsUnsigned += self._char_size
+                else:
+                    break
+            return u''.join(result)
+        except:
+            pass
+        return None
+
+    def _update(self):
+        d = self.valobj.GetChildMemberWithName('d')
+        data = d.GetChildMemberWithName('data')
+        isShared = d.GetChildMemberWithName('is_shared').GetValueAsUnsigned(0)
+        packedType = d.GetChildMemberWithName('packedType').GetValueAsUnsigned(0)
+
+        if packedType == 0:
+            self._addChild(('(content)', "null"), hidden=True)
+            return
+
+        # convert packedType to pointer to QMetaTypeInterface
+        metatype_ptr = self.tryCastToMetaType(packedType << 2)
+        if metatype_ptr is None:
+            self._addChild(('(content)', "Invalid"), hidden=True)
+            return
+
+        variantType = metatype_ptr.GetChildMemberWithName('typeId') # QBasicAtomicInt
+        name =  metatype_ptr.GetChildMemberWithName('name')
+
+        intVariantType = self.tryGetVariantType(variantType)
+        name_str = self.readCString(name.GetValueAsUnsigned(0))
+        # FindFirstType can't find templates without space after comma
+        name_str = name_str.replace(',', ', ')
+        self._addChild(('(content)', name_str), hidden=True)
+
+        variant_data_type = self.valobj.GetTarget().FindFirstType(name_str)
+
+        data_onstack = data.GetChildMemberWithName('data')
+
+        if intVariantType <= 6:
+            simple_value = self.valobj.CreateValueFromData(
+                    '(value)', data_onstack.GetData(), variant_data_type)
+            self._addChild(simple_value)
+            return
+
+        if isShared:
+            data_shared = data.GetChildMemberWithName('shared')
+            # offset for union
+            shared_addr = data_shared.GetValueAsUnsigned(0) + 8
+            shared_value = self.valobj.CreateValueFromAddress('(value)', shared_addr, variant_data_type)
+            self._addChild(shared_value)
+        else:
+            simple_value = self.valobj.CreateValueFromData(
+                    '(value)', data_onstack.GetData(), variant_data_type)
+            self._addChild(simple_value)
+        
+        # service info
+        self._addChild(('(type)', name_str))
+        metatypeInterface = self.valobj.CreateValueFromData('(QMetatypeInterface)',
+                                                  metatype_ptr.GetData(),
+                                                  metatype_ptr.GetType())
+        self._addChild(metatypeInterface)
+        # original field
+        self._addChild(d)

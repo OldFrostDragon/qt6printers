@@ -26,7 +26,7 @@ command script import ~/<path-to-cloned-repo>/lldb/qt.py
 - [x] QString
 - [x] QStringList
 - [x] QByteArray
-- [ ] QVariant
+- [x] QVariant (does not handle std:: containers properly)
 - [x] QDate
 - [x] QTime
 - [x] QDateTime
