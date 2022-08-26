@@ -508,7 +508,6 @@ class BasicMapFormatter(HiddenMemberProvider):
             return
 
         m = dd.GetChildMemberWithName('m')
-
         int_map_value = self.valobj.CreateValueFromData("std_map", m.GetData(), m.GetType().GetCanonicalType())
         self._num_children = 1
         self._addChild(int_map_value)
@@ -1209,12 +1208,10 @@ class QVariantFormatter(HiddenMemberProvider):
 
         intVariantType = self.tryGetVariantType(variantType)
         name_str = self.readCString(name.GetValueAsUnsigned(0))
-        # FindFirstType can't find templates without space after comma
-        name_str = name_str.replace(',', ', ')
         self._addChild(('(content)', name_str), hidden=True)
 
-        variant_data_type = self.valobj.GetTarget().FindFirstType(name_str)
-
+        # QVariant types do not have spaces after comma and between consecutive '>'  
+        variant_data_type = self.valobj.GetTarget().FindFirstType(canonicalized_type_name(name_str))
         data_onstack = data.GetChildMemberWithName('data')
 
         if intVariantType <= 6:

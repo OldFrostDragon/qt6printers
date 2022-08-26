@@ -37,7 +37,19 @@ def canonicalized_type_name(name):
         + no space before pointer *
     otherwise FindFirstType returns None
     """
-    return name.replace(' ', '').replace(',', ', ')
+    out_name = name.replace(',', ', ')
+    if len(out_name) < 2:
+        return out_name
+
+    can_name = []
+    can_name.append(out_name[0])
+    prev_char = out_name[0]
+    for i in range(1, len(out_name)):
+        if prev_char == '>' and out_name[i] == '>':
+            can_name.append(' ')
+        can_name.append(out_name[i])
+        prev_char = out_name[i]
+    return "".join(can_name)
 
 
 def quote(string, quote='"'):
