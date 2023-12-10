@@ -11,7 +11,6 @@ from __future__ import print_function
 import time
 import datetime as dt
 import string
-from turtle import rt
 from urllib.parse import urlsplit, urlunsplit
 
 import locale
