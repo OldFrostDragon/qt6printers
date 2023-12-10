@@ -184,7 +184,7 @@ class QStringFormatter(HiddenMemberProvider):
     def _update(self):
         printable, dataPointer, byteLength = printableQString(self.valobj)
         strLength = byteLength / 2
-        self._num_children = strLength
+        self._num_children = int(strLength)
         if printable is not None:
             for idx in range(0, int(strLength)):
                 var = self.valobj.CreateValueFromAddress('[{}]'.format(idx),
