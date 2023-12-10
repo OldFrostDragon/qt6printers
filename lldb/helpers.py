@@ -169,7 +169,7 @@ class HiddenMemberProvider(object):
 
     @staticmethod
     def _capping_size():
-        return 255
+        return 65535
 
     def __init__(self, valobj, internal_dict):
         self.valobj = valobj
