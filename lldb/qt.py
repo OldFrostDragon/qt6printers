@@ -51,7 +51,7 @@ def __lldb_init_module(debugger, unused):
     debugger.HandleCommand('type summary add -x "^QMapNode<.+>$" -w kdevelop-qt -F qt.KeyValueSummaryProvider')
 
     debugger.HandleCommand('type synthetic add -x "^QMap<.+>$" -w kdevelop-qt -l qt.QMapFormatter')
-    debugger.HandleCommand('type summary add -x "^QMap<.+>$" -w kdevelop-qt -e -s "<${var.std_map}>"')
+    debugger.HandleCommand('type summary add -x "^QMap<.+>$" -w kdevelop-qt -e -s "<size=${svar%#}>"')
 
     debugger.HandleCommand('type synthetic add -x "^QMultiMap<.+>$" -w kdevelop-qt -l qt.QMultiMapFormatter')
     debugger.HandleCommand('type summary add -x "^QMultiMap<.+>$" -w kdevelop-qt -e -s "<size=${svar%#}>"')
@@ -508,8 +508,9 @@ class BasicMapFormatter(HiddenMemberProvider):
 
         m = dd.GetChildMemberWithName('m')
         int_map_value = self.valobj.CreateValueFromData("std_map", m.GetData(), m.GetType().GetCanonicalType())
-        self._num_children = 1
-        self._addChild(int_map_value)
+        self._num_children = int_map_value.GetNumChildren()
+        for i in range(self._num_children):
+            self._addChild(int_map_value.GetChildAtIndex(i))
 
     def _update(self):
         self._num_children = 0
@@ -521,8 +522,9 @@ class BasicMapFormatter(HiddenMemberProvider):
         m = dd.GetChildMemberWithName('m')
 
         int_map_value = self.valobj.CreateValueFromData("std_map", m.GetData(), m.GetType().GetCanonicalType())
-        self._num_children = 1
-        self._addChild(int_map_value)
+        self._num_children = int_map_value.GetNumChildren()
+        for i in range(self._num_children):
+            self._addChild(int_map_value.GetChildAtIndex(i))
 
 class QMapFormatter(BasicMapFormatter):
     """lldb synthethic provider for QMap"""
