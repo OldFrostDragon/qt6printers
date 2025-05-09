@@ -51,7 +51,7 @@ def __lldb_init_module(debugger, unused):
     debugger.HandleCommand('type summary add -x "^QMapNode<.+>$" -w kdevelop-qt -F qt.KeyValueSummaryProvider')
 
     debugger.HandleCommand('type synthetic add -x "^QMap<.+>$" -w kdevelop-qt -l qt.QMapFormatter')
-    debugger.HandleCommand('type summary add -x "^QMap<.+>$" -w kdevelop-qt -e -s "<size=${svar%#}>"')
+    debugger.HandleCommand('type summary add -x "^QMap<.+>$" -w kdevelop-qt -e -s "<${var.std_map}>"')
 
     debugger.HandleCommand('type synthetic add -x "^QMultiMap<.+>$" -w kdevelop-qt -l qt.QMultiMapFormatter')
     debugger.HandleCommand('type summary add -x "^QMultiMap<.+>$" -w kdevelop-qt -e -s "<size=${svar%#}>"')
